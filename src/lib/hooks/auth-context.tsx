@@ -110,6 +110,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (lsOrgName && org) finalOrg = { ...org, name: lsOrgName }
       const lsStoreName = localStorage.getItem('ca-dev-store-name')
       if (lsStoreName) finalStores = stores.map(s => ({ ...s, name: lsStoreName }))
+      // Apply Meta Cloud API overrides from localStorage (survives API save failures)
+      const lsMetaPhoneId = localStorage.getItem('ca-dev-meta-phone-number-id')
+      const lsMetaToken = localStorage.getItem('ca-dev-meta-access-token')
+      const lsMetaWabaId = localStorage.getItem('ca-dev-meta-waba-id')
+      const lsWhatsappNumber = localStorage.getItem('ca-dev-whatsapp')
+      if (lsMetaPhoneId) finalStores = finalStores.map(s => ({ ...s, meta_phone_number_id: lsMetaPhoneId }))
+      if (lsMetaToken) finalStores = finalStores.map(s => ({ ...s, meta_access_token: lsMetaToken }))
+      if (lsMetaWabaId) finalStores = finalStores.map(s => ({ ...s, meta_waba_id: lsMetaWabaId }))
+      if (lsWhatsappNumber) finalStores = finalStores.map(s => ({ ...s, whatsapp_number: lsWhatsappNumber }))
     }
     const stored = typeof window !== 'undefined' ? localStorage.getItem('ca-current-store') : null
     const currentStoreId = (stored && finalStores.find(s => s.id === stored))
