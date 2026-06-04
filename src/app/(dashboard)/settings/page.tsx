@@ -34,6 +34,19 @@ export default function SettingsPage() {
     if (currentStore?.meta_access_token) setMetaAccessToken(currentStore.meta_access_token)
     if (currentStore?.meta_waba_id) setMetaWabaId(currentStore.meta_waba_id)
     if (currentStore?.meta_access_token) setIsConnected(true)
+
+    // Direct localStorage fallback for Meta fields (survives API/auth failures)
+    if (typeof window !== 'undefined' && !currentStore?.meta_access_token) {
+      const lsId = localStorage.getItem('ca-dev-meta-phone-number-id')
+      const lsToken = localStorage.getItem('ca-dev-meta-access-token')
+      const lsWaba = localStorage.getItem('ca-dev-meta-waba-id')
+      const lsPhone = localStorage.getItem('ca-dev-whatsapp')
+      if (lsId) setMetaPhoneNumberId(lsId)
+      if (lsToken) { setMetaAccessToken(lsToken); setIsConnected(true) }
+      if (lsWaba) setMetaWabaId(lsWaba)
+      if (lsPhone) { setWhatsappNumberDisplay(lsPhone); setWhatsappPhone(lsPhone) }
+    }
+
     // Load AI config — API first, localStorage fallback on any error (network + non-2xx)
     fetch('/api/settings/ai-config').then(r => {
       if (!r.ok) throw new Error('HTTP ' + r.status)

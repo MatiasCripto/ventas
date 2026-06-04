@@ -18,11 +18,24 @@ export default function WhatsAppPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    // Load from currentStore (set by auth-context, may include localStorage overrides)
     if (currentStore?.meta_phone_number_id) setPhoneNumberId(currentStore.meta_phone_number_id)
     if (currentStore?.meta_access_token) setAccessToken(currentStore.meta_access_token)
     if (currentStore?.meta_waba_id) setWabaId(currentStore.meta_waba_id)
     if (currentStore?.whatsapp_number) { setPhoneNumber(currentStore.whatsapp_number); setPhoneDisplay(currentStore.whatsapp_number) }
     if (currentStore?.meta_access_token) setIsActive(true)
+
+    // Direct localStorage fallback (survives API failures even if auth-context doesn't have the override)
+    if (typeof window !== 'undefined' && !currentStore?.meta_access_token) {
+      const lsId = localStorage.getItem('ca-dev-meta-phone-number-id')
+      const lsToken = localStorage.getItem('ca-dev-meta-access-token')
+      const lsWaba = localStorage.getItem('ca-dev-meta-waba-id')
+      const lsPhone = localStorage.getItem('ca-dev-whatsapp')
+      if (lsId) setPhoneNumberId(lsId)
+      if (lsToken) { setAccessToken(lsToken); setIsActive(true) }
+      if (lsWaba) setWabaId(lsWaba)
+      if (lsPhone) { setPhoneNumber(lsPhone); setPhoneDisplay(lsPhone) }
+    }
   }, [currentStore])
 
   async function handleSave() {
