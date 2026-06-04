@@ -34,12 +34,20 @@ export default function SettingsPage() {
     if (currentStore?.meta_access_token) setMetaAccessToken(currentStore.meta_access_token)
     if (currentStore?.meta_waba_id) setMetaWabaId(currentStore.meta_waba_id)
     if (currentStore?.meta_access_token) setIsConnected(true)
-    // Load AI config
+    // Load AI config — API first, localStorage fallback for dev mode
     fetch('/api/settings/ai-config').then(r => r.json()).then(data => {
       if (data.provider) setAiProvider(data.provider)
       if (data.apiKey) setAiApiKey(data.apiKey)
       if (data.model) setAiModel(data.model)
-    }).catch(() => {})
+    }).catch(() => {
+      // Dev mode fallback: load from localStorage
+      const lsProvider = localStorage.getItem('ca-dev-ai-provider')
+      const lsKey = localStorage.getItem('ca-dev-ai-key')
+      const lsModel = localStorage.getItem('ca-dev-ai-model')
+      if (lsProvider) setAiProvider(lsProvider)
+      if (lsKey) setAiApiKey(lsKey)
+      if (lsModel) setAiModel(lsModel)
+    })
   }, [authUser, currentStore])
 
   async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -160,6 +168,9 @@ export default function SettingsPage() {
     localStorage.setItem('ca-dev-org-name', orgName)
     localStorage.setItem('ca-dev-store-name', storeName)
     if (storeLogo) localStorage.setItem('ca-dev-logo', storeLogo)
+    localStorage.setItem('ca-dev-ai-provider', aiProvider)
+    localStorage.setItem('ca-dev-ai-key', aiApiKey)
+    localStorage.setItem('ca-dev-ai-model', aiModel)
 
     setSaving(false)
     setSaved(true)
