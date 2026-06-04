@@ -34,13 +34,16 @@ export default function SettingsPage() {
     if (currentStore?.meta_access_token) setMetaAccessToken(currentStore.meta_access_token)
     if (currentStore?.meta_waba_id) setMetaWabaId(currentStore.meta_waba_id)
     if (currentStore?.meta_access_token) setIsConnected(true)
-    // Load AI config — API first, localStorage fallback for dev mode
-    fetch('/api/settings/ai-config').then(r => r.json()).then(data => {
+    // Load AI config — API first, localStorage fallback on any error (network + non-2xx)
+    fetch('/api/settings/ai-config').then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      return r.json()
+    }).then(data => {
       if (data.provider) setAiProvider(data.provider)
       if (data.apiKey) setAiApiKey(data.apiKey)
       if (data.model) setAiModel(data.model)
     }).catch(() => {
-      // Dev mode fallback: load from localStorage
+      // Fallback: load from localStorage (works even when API returns 403/500)
       const lsProvider = localStorage.getItem('ca-dev-ai-provider')
       const lsKey = localStorage.getItem('ca-dev-ai-key')
       const lsModel = localStorage.getItem('ca-dev-ai-model')
