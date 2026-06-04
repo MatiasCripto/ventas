@@ -5,28 +5,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { sendText, downloadMedia } from '@/lib/bot/evolution-client'
-
-const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN ?? 'concierge-verify'
-
-/**
- * Meta Cloud API webhook verification (GET).
- * Meta sends a GET request with hub.mode, hub.verify_token, hub.challenge
- * to verify the webhook endpoint.
- */
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url)
-  const mode = searchParams.get('hub.mode')
-  const token = searchParams.get('hub.verify_token')
-  const challenge = searchParams.get('hub.challenge')
-
-  if (mode === 'subscribe' && token === WEBHOOK_VERIFY_TOKEN && challenge) {
-    console.log('[WEBHOOK] Meta verification successful')
-    return new NextResponse(challenge, { status: 200 })
-  }
-
-  console.warn('[WEBHOOK] Meta verification failed', { mode, token })
-  return NextResponse.json({ error: 'Verification failed' }, { status: 403 })
-}
 import {
   getOrCreateConversation, saveMessage, updateContext,
   fetchProducts, fetchCustomerOrders, fetchCustomerHistory,
@@ -46,6 +24,34 @@ import { validateWebhookPayload } from './validators/payload.validator'
 import { handleMediaMessage } from './handlers/media.handler'
 import type { CheckoutState } from '@/lib/bot/checkout-machine'
 import type { BotContext } from '@/lib/types/whatsapp.types'
+
+const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN ?? 'concierge-verify'
+
+/**
+ * Meta Cloud API webhook verification (GET).
+ * Meta sends a GET request with hub.mode, hub.verify_token, hub.challenge
+ * to verify the webhook endpoint.
+ * Respond with hub.challenge as plain text on success, 403 on failure.
+ */
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const mode = searchParams.get('hub.mode')
+  const token = searchParams.get('hub.verify_token')
+  const challenge = searchParams.get('hub.challenge')
+
+  console.log('[WEBHOOK] Meta verification request', { mode, token: token?.slice(0, 10) + '...', expectedToken: WEBHOOK_VERIFY_TOKEN.slice(0, 10) + '...', hasChallenge: !!challenge })
+
+  if (mode === 'subscribe' && token === WEBHOOK_VERIFY_TOKEN && challenge) {
+    console.log('[WEBHOOK] Meta verification successful — returning challenge')
+    return new NextResponse(challenge, {
+      status: 200,
+      headers: { 'Content-Type': 'text/plain' },
+    })
+  }
+
+  console.warn('[WEBHOOK] Meta verification failed', { mode, receivedToken: token, expectedToken: WEBHOOK_VERIFY_TOKEN })
+  return NextResponse.json({ error: 'Verification failed' }, { status: 403 })
+}
 
 const CHECKOUT_STATES: Set<string> = new Set(['name', 'dni', 'shipping', 'address', 'payment_method', 'payment_waiting_proof', 'confirm', 'completed'])
 
