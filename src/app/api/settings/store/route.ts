@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
     const auth = await requireOrgAccess(req)
     if (!auth.authorized) return auth.response
 
-    const { orgName, storeName, whatsappNumber, evolutionInstance, logoUrl } = await req.json()
+    const { orgName, storeName, whatsappNumber, evolutionInstance, logoUrl, metaPhoneNumberId, metaAccessToken, metaWabaId } = await req.json()
     const sb = createServiceClient()
 
     // Find the store — filtered by the authenticated user's organization
@@ -32,6 +32,9 @@ export async function POST(req: NextRequest) {
     if (whatsappNumber !== undefined) updates.whatsapp_number = whatsappNumber
     if (evolutionInstance !== undefined) updates.evolution_instance = evolutionInstance
     if (logoUrl !== undefined) updates.logo_url = logoUrl
+    if (metaPhoneNumberId !== undefined) updates.meta_phone_number_id = metaPhoneNumberId
+    if (metaAccessToken !== undefined) updates.meta_access_token = metaAccessToken
+    if (metaWabaId !== undefined) updates.meta_waba_id = metaWabaId
     if (Object.keys(updates).length > 0) {
       await sb.from('stores').update(updates).eq('id', storeId)
     }

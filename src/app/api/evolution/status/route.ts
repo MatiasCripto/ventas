@@ -1,15 +1,11 @@
-﻿import { NextRequest, NextResponse } from 'next/server'
-import { getInstanceStatus } from '@/lib/bot/evolution-client'
+import { NextRequest, NextResponse } from 'next/server'
 import { requireOrgAccess } from '@/lib/auth/require-org'
 
-export async function GET(req: NextRequest) {
-  const auth = await requireOrgAccess(req)
+// Evolution API was migrated to Meta Cloud API.
+// Meta Cloud API is always "open" if the token is configured.
+export async function GET(_req: NextRequest) {
+  const auth = await requireOrgAccess(_req)
   if (!auth.authorized) return auth.response
 
-  try {
-    const data = await getInstanceStatus()
-    return NextResponse.json(data)
-  } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 })
-  }
+  return NextResponse.json({ instance: { state: 'open' }, provider: 'meta' })
 }

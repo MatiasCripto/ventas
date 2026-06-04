@@ -1,115 +1,88 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { Smartphone, RefreshCw, Link2, Link2Off, ScanLine, CheckCircle2, AlertCircle } from 'lucide-react'
-
-type ConnectionState = 'connecting' | 'open' | 'close' | 'disconnected' | 'loading'
-
-const STATE_CONFIG: Record<string, { label: string; color: string; bg: string; icon: 'check' | 'alert' | 'scan' }> = {
-  open:         { label: 'Conectado',   color: '#065f46', bg: '#f0fdf4', icon: 'check' },
-  connecting:   { label: 'Conectando',  color: '#5b21b6', bg: '#f5f3ff', icon: 'scan' },
-  close:        { label: 'Desconectado', color: '#991b1b', bg: '#fef2f2', icon: 'alert' },
-  disconnected: { label: 'Desconectado', color: '#991b1b', bg: '#fef2f2', icon: 'alert' },
-  loading:      { label: 'Cargando...',  color: '#64748b', bg: '#f1f5f9', icon: 'alert' },
-}
+import { useEffect, useState } from 'react'
+import { useAuthContext } from '@/lib/hooks/auth-context'
+import { Smartphone, CheckCircle2, AlertCircle, Link2, Link2Off, Save, ExternalLink } from 'lucide-react'
 
 export default function WhatsAppPage() {
-  const [state, setState] = useState<ConnectionState>('loading')
-  const [qrBase64, setQrBase64] = useState<string | null>(null)
+  const { currentStore, updateCurrentStore } = useAuthContext()
+
+  const [phoneNumberId, setPhoneNumberId] = useState('')
+  const [accessToken, setAccessToken] = useState('')
+  const [wabaId, setWabaId] = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [phoneDisplay, setPhoneDisplay] = useState('')
+  const [isActive, setIsActive] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [connecting, setConnecting] = useState(false)
 
-  const fetchQr = useCallback(async () => {
-    try {
-      const res = await fetch('/api/evolution/connect')
-      const data = await res.json()
-      if (data.base64) {
-        setQrBase64(data.base64)
-      }
-      return data
-    } catch {
-      return null
-    }
-  }, [])
+  useEffect(() => {
+    if (currentStore?.meta_phone_number_id) setPhoneNumberId(currentStore.meta_phone_number_id)
+    if (currentStore?.meta_access_token) setAccessToken(currentStore.meta_access_token)
+    if (currentStore?.meta_waba_id) setWabaId(currentStore.meta_waba_id)
+    if (currentStore?.whatsapp_number) { setPhoneNumber(currentStore.whatsapp_number); setPhoneDisplay(currentStore.whatsapp_number) }
+    if (currentStore?.meta_access_token) setIsActive(true)
+  }, [currentStore])
 
-  const fetchStatus = useCallback(async () => {
-    try {
-      const res = await fetch('/api/evolution/status')
-      const data = await res.json()
-      const instanceState = data?.instance?.state ?? 'close'
-      setState(instanceState as ConnectionState)
-      return instanceState
-    } catch {
-      setState('close')
-      return 'close'
-    }
-  }, [])
-
-  const handleConnect = useCallback(async () => {
-    setConnecting(true)
+  async function handleSave() {
+    setSaving(true)
     setError(null)
-    setQrBase64(null)
-    setState('connecting')
     try {
-      const data = await fetchQr()
-      if (data?.base64) {
-        setQrBase64(data.base64)
+      const saveRes = await fetch('/api/settings/store', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          metaPhoneNumberId: phoneNumberId,
+          metaAccessToken: accessToken,
+          metaWabaId: wabaId,
+          whatsappNumber: phoneNumber || undefined,
+        }),
+      })
+      if (!saveRes.ok) {
+        const errData = await saveRes.json().catch(() => ({ error: 'Error al guardar' }))
+        setError(errData.error ?? 'Error al guardar')
+        return
       }
-      // Poll for QR refresh while connecting
-      let attempts = 0
-      const interval = setInterval(async () => {
-        const s = await fetchStatus()
-        if (s === 'open') {
-          clearInterval(interval)
-          setConnecting(false)
-          return
-        }
-        attempts++
-        if (attempts > 30) {
-          clearInterval(interval)
-          setConnecting(false)
-          return
-        }
-        // Refresh QR every 5s
-        const qr = await fetchQr()
-        if (qr?.base64) setQrBase64(qr.base64)
-      }, 5000)
+      updateCurrentStore({
+        meta_phone_number_id: phoneNumberId,
+        meta_access_token: accessToken,
+        meta_waba_id: wabaId,
+        whatsapp_number: phoneNumber || null,
+      } as any)
+      setPhoneDisplay(phoneNumber)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
     } catch (err: any) {
-      setError(err?.message ?? 'Error al conectar')
-      setConnecting(false)
+      setError(err?.message ?? 'Error al guardar')
+    } finally {
+      setSaving(false)
     }
-  }, [fetchQr, fetchStatus])
+  }
 
-  const handleDisconnect = useCallback(async () => {
+  async function handleDisconnect() {
     try {
-      await fetch('/api/evolution/disconnect')
-      setState('close')
-      setQrBase64(null)
+      await fetch('/api/whatsapp/disconnect', { method: 'POST' })
+      setPhoneNumberId('')
+      setAccessToken('')
+      setWabaId('')
+      setPhoneNumber('')
+      setPhoneDisplay('')
+      setIsActive(false)
+      updateCurrentStore({
+        meta_phone_number_id: null,
+        meta_access_token: null,
+        meta_waba_id: null,
+        whatsapp_number: null,
+      } as any)
     } catch (err: any) {
       setError(err?.message ?? 'Error al desconectar')
     }
-  }, [])
-
-  useEffect(() => {
-    async function init() {
-      const s = await fetchStatus()
-      if (s === 'open') {
-        setState('open')
-      } else if (s === 'connecting') {
-        await handleConnect()
-      } else {
-        setState('close')
-      }
-    }
-    init()
-  }, [fetchStatus, handleConnect])
-
-  const sc = STATE_CONFIG[state] ?? STATE_CONFIG.loading
-  const IconComponent = sc.icon === 'check' ? CheckCircle2 : sc.icon === 'alert' ? AlertCircle : ScanLine
+  }
 
   return (
     <div className="space-y-6 animate-fade-in max-w-2xl">
-      <h1 className="text-xl font-semibold">WhatsApp</h1>
+      <h1 className="text-xl font-semibold">WhatsApp Cloud API</h1>
 
       {/* Status */}
       <div className="card p-5 space-y-4">
@@ -118,14 +91,22 @@ export default function WhatsAppPage() {
           <h2 className="font-semibold text-sm">Conexión WhatsApp</h2>
         </div>
 
-        {/* Estado */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-[var(--radius-full)] text-xs font-medium"
-            style={{ background: sc.bg, color: sc.color }}>
-            <IconComponent size={14} />
-            {sc.label}
-          </div>
-          {state === 'open' && (
+          {isActive ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-[var(--radius-full)] text-xs font-medium"
+              style={{ background: '#f0fdf4', color: '#065f46' }}>
+              <CheckCircle2 size={14} />
+              Conectado
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-[var(--radius-full)] text-xs font-medium"
+              style={{ background: '#fef2f2', color: '#991b1b' }}>
+              <AlertCircle size={14} />
+              No configurado
+            </div>
+          )}
+
+          {isActive && (
             <button onClick={handleDisconnect}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-md)] text-xs font-medium transition-colors"
               style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
@@ -135,61 +116,99 @@ export default function WhatsAppPage() {
           )}
         </div>
 
-        {/* QR Code */}
-        {qrBase64 && state !== 'open' && (
-          <div className="flex flex-col items-center gap-3 py-4">
-            <div className="rounded-[var(--radius-lg)] overflow-hidden border-2" style={{ borderColor: 'var(--border)' }}>
-              <img src={qrBase64} alt="QR Code" className="w-64 h-64" />
-            </div>
-            <p className="text-xs text-center max-w-sm" style={{ color: 'var(--subtle)' }}>
-              Escaneá este código QR desde WhatsApp en tu celular: Menú &gt; Dispositivos vinculados &gt; Vincular un dispositivo
-            </p>
+        {phoneDisplay && (
+          <div className="flex items-center gap-2 text-sm">
+            <Smartphone size={16} style={{ color: 'var(--muted)' }} />
+            <span>{phoneDisplay}</span>
           </div>
         )}
+      </div>
 
-        {/* Error */}
+      {/* Configuration */}
+      <div className="card p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <Link2 size={16} style={{ color: 'var(--brand)' }} />
+          <h2 className="font-semibold text-sm">Configuración</h2>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
+            Phone Number ID
+          </label>
+          <input type="text" value={phoneNumberId} onChange={e => setPhoneNumberId(e.target.value)}
+            placeholder="123456789012345"
+            className="w-full mt-1 px-3 py-2 rounded-[var(--radius-md)] border text-sm bg-transparent outline-none"
+            style={{ borderColor: 'var(--border)', color: 'var(--foreground)' }}
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
+            Access Token
+          </label>
+          <textarea value={accessToken} onChange={e => setAccessToken(e.target.value)}
+            placeholder="EAA..."
+            rows={3}
+            className="w-full mt-1 px-3 py-2 rounded-[var(--radius-md)] border text-sm bg-transparent outline-none font-mono"
+            style={{ borderColor: 'var(--border)', color: 'var(--foreground)' }}
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
+            Número de teléfono <span className="text-[var(--subtle)]">(opcional)</span>
+          </label>
+          <input type="text" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)}
+            placeholder="+5491123456789"
+            className="w-full mt-1 px-3 py-2 rounded-[var(--radius-md)] border text-sm bg-transparent outline-none"
+            style={{ borderColor: 'var(--border)', color: 'var(--foreground)' }}
+          />
+          <p className="text-xs mt-1" style={{ color: 'var(--subtle)' }}>
+            Se mostrará en el dashboard. Formato internacional sin espacios: +54911...
+          </p>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
+            WABA ID <span className="text-[var(--subtle)]">(opcional)</span>
+          </label>
+          <input type="text" value={wabaId} onChange={e => setWabaId(e.target.value)}
+            placeholder="123456789012345"
+            className="w-full mt-1 px-3 py-2 rounded-[var(--radius-md)] border text-sm bg-transparent outline-none"
+            style={{ borderColor: 'var(--border)', color: 'var(--foreground)' }}
+          />
+        </div>
+
         {error && (
           <div className="p-3 rounded-[var(--radius-md)] text-xs" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
             {error}
           </div>
         )}
 
-        {/* Actions */}
-        {state === 'close' && (
-          <button onClick={handleConnect} disabled={connecting}
-            className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-md)] text-white text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
-            style={{ background: 'var(--brand)' }}>
-            {connecting ? (
-              <>
-                <RefreshCw size={16} className="animate-spin" />
-                Conectando...
-              </>
-            ) : (
-              <>
-                <Link2 size={16} />
-                Conectar WhatsApp
-              </>
-            )}
-          </button>
-        )}
-
-        {state === 'connecting' && !qrBase64 && (
-          <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--muted)' }}>
-            <RefreshCw size={16} className="animate-spin" />
-            Generando QR...
-          </div>
-        )}
+        <button onClick={handleSave} disabled={saving || !phoneNumberId || !accessToken}
+          className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-md)] text-white text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+          style={{ background: 'var(--brand)' }}>
+          <Save size={16} />
+          {saving ? 'Guardando...' : saved ? 'Configuración guardada' : 'Guardar configuración'}
+        </button>
       </div>
 
-      {/* Info */}
-      <div className="card p-4">
-        <h2 className="font-semibold text-sm mb-2">¿Cómo funciona?</h2>
-        <ul className="space-y-1.5 text-xs" style={{ color: 'var(--muted)' }}>
-          <li>1. Hacé clic en &quot;Conectar WhatsApp&quot; para generar un código QR</li>
-          <li>2. Escanealo desde WhatsApp (Menú &gt; Dispositivos vinculados)</li>
-          <li>3. Una vez conectado, los mensajes entrantes serán gestionados por el agente de IA</li>
-          <li>4. Podés desconectar en cualquier momento desde esta página</li>
-        </ul>
+      {/* Instructions */}
+      <div className="card p-5 space-y-3">
+        <h2 className="font-semibold text-sm">¿Cómo obtener estos datos?</h2>
+        <ol className="space-y-1.5 text-xs" style={{ color: 'var(--muted)' }}>
+          <li>1. Andá a <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 underline">Meta for Developers <ExternalLink size={12} /></a></li>
+          <li>2. Seleccioná tu app de WhatsApp Business</li>
+          <li>3. Andá a <strong>WhatsApp &gt; Configuración</strong></li>
+          <li>4. Copiá el <strong>Phone Number ID</strong> del número que querés usar</li>
+          <li>5. Generá o copiá un <strong>Access Token</strong> permanente (sugerencia: usar System User Token con permisos de WhatsApp)</li>
+          <li>6. Pegá ambos valores acá y hacé clic en "Guardar configuración"</li>
+        </ol>
+        <p className="text-xs" style={{ color: 'var(--subtle)' }}>
+          Los mensajes entrantes a este número serán procesados automáticamente por el agente de IA.
+          No se realiza verificación contra Meta al guardar — la conexión se valida al recibir el primer mensaje.
+        </p>
       </div>
     </div>
   )

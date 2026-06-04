@@ -39,6 +39,15 @@ export interface Store {
   settings: Record<string, unknown>
   is_active: boolean
   evolution_instance: string | null
+  whatsapp_token: string | null
+  whatsapp_phone: string | null
+  whatsapp_phone_number_id: string | null
+  whatsapp_waba_id: string | null
+  whatsapp_active: boolean | null
+  meta_phone_number_id: string | null
+  meta_access_token: string | null
+  meta_waba_id: string | null
+  whatsapp_provider: string | null
   created_at: string
 }
 

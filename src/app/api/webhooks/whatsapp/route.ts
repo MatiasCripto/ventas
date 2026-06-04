@@ -1,10 +1,32 @@
-// ── WhatsApp webhook (Evolution API) ───────────────────────────
+// ── WhatsApp webhook (Meta Cloud API + Evolution API legacy) ──
 // Orchestrator: delegates to specialized handlers.
 // See ./handlers/ for checkout, media, and order handling.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { sendText, downloadMedia } from '@/lib/bot/evolution-client'
+
+const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN ?? 'concierge-verify'
+
+/**
+ * Meta Cloud API webhook verification (GET).
+ * Meta sends a GET request with hub.mode, hub.verify_token, hub.challenge
+ * to verify the webhook endpoint.
+ */
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const mode = searchParams.get('hub.mode')
+  const token = searchParams.get('hub.verify_token')
+  const challenge = searchParams.get('hub.challenge')
+
+  if (mode === 'subscribe' && token === WEBHOOK_VERIFY_TOKEN && challenge) {
+    console.log('[WEBHOOK] Meta verification successful')
+    return new NextResponse(challenge, { status: 200 })
+  }
+
+  console.warn('[WEBHOOK] Meta verification failed', { mode, token })
+  return NextResponse.json({ error: 'Verification failed' }, { status: 403 })
+}
 import {
   getOrCreateConversation, saveMessage, updateContext,
   fetchProducts, fetchCustomerOrders, fetchCustomerHistory,
@@ -23,7 +45,7 @@ import { recordOrderEvent } from '@/lib/services/order-event.service'
 import { validateWebhookPayload } from './validators/payload.validator'
 import { handleMediaMessage } from './handlers/media.handler'
 import type { CheckoutState } from '@/lib/bot/checkout-machine'
-import type { EvolutionMessageData, BotContext } from '@/lib/types/whatsapp.types'
+import type { BotContext } from '@/lib/types/whatsapp.types'
 
 const CHECKOUT_STATES: Set<string> = new Set(['name', 'dni', 'shipping', 'address', 'payment_method', 'payment_waiting_proof', 'confirm', 'completed'])
 
@@ -44,23 +66,26 @@ export async function POST(req: NextRequest) {
     const validated = await validateWebhookPayload(req)
     if (!validated.ok) return validated.response
 
-    const { payload, phone, text, pushName } = validated.data
-    const data = payload.data as EvolutionMessageData
-    console.log('[WEBHOOK] msg from:', phone, 'text:', text.slice(0, 60))
+    const { payload, phone, text, pushName, phoneNumberId } = validated.data
+    console.log('[WEBHOOK] msg from:', phone, 'text:', text.slice(0, 60), 'phoneNumberId:', phoneNumberId)
 
     // Normalize common color typos (e.g. "Balnco" -> "blanco")
     function normalizeColor(c: string): string {
       return c.toLowerCase().replace(/^b(al)nco$/i, 'blanco').replace(/^gris$/i, 'gris')
     }
 
-    // Find org by Evolution instance
+    // Find org by Meta phone_number_id (preferred) or Evolution instance (legacy)
     const sb = createServiceClient()
-    const { data: store } = await sb.from('stores')
-      .select('id, organization_id, name')
-      .eq('evolution_instance', payload.instance)
-      .maybeSingle()
+    let storeQuery = sb.from('stores').select('id, organization_id, name')
+    if (phoneNumberId) {
+      storeQuery = storeQuery.eq('meta_phone_number_id', phoneNumberId)
+    } else {
+      storeQuery = storeQuery.eq('evolution_instance', (payload as any).instance)
+    }
+    const { data: store } = await storeQuery.maybeSingle()
     if (!store) {
-      console.log('[WEBHOOK] unknown instance:', payload.instance)
+      const instance = phoneNumberId ?? (payload as any).instance
+      console.log('[WEBHOOK] unknown instance:', instance)
       return NextResponse.json({ error: 'Unknown instance' }, { status: 404 })
     }
     console.log('[WEBHOOK] store:', store.name, 'org:', store.organization_id)
@@ -68,13 +93,16 @@ export async function POST(req: NextRequest) {
     const orgId = store.organization_id
     const storeId = store.id
 
-    // Resolve Evolution instance for multi-tenant support
-    const instanceName = payload.instance
+    // Resolve instance for multi-tenant messaging
+    // For Meta: use phoneNumberId; for Evolution: use evolution_instance
+    const instanceName = phoneNumberId ?? (payload as any).instance
     const evoSend = (phone: string, text: string) => sendText(phone, text, undefined, instanceName)
     const evoDownload = (jid: string, msgId: string) => downloadMedia(jid, msgId, instanceName)
 
-    // Message-level idempotency: skip if this message was already processed
-    const msgId = data.key?.id
+    // Extract msgId for idempotency (Meta vs Evolution format)
+    const metaMsgId = (payload as any)?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.id
+    const evolutionMsgId = (payload as any)?.data?.key?.id
+    const msgId = metaMsgId ?? evolutionMsgId
     if (msgId) {
       const { data: existingMsg } = await sb.from('messages')
         .select('id')
@@ -325,9 +353,24 @@ export async function POST(req: NextRequest) {
     }
 
     // ── PAYMENT PROOF DETECTION (image + active order) ────────
-    if (ctx.activeOrderId && (data.message?.imageMessage?.url || data.message?.imageMessage)) {
-      const jid = data.key.remoteJid
-      const imgMsgId = data.key.id
+    // Check for image messages from both Meta and Evolution payloads
+    const metaMsg = phoneNumberId ? (payload as any)?.entry?.[0]?.changes?.[0]?.value?.messages?.[0] : null
+    const evolutionMsg = !phoneNumberId ? (payload as any)?.data : null
+    const isImage =
+      (metaMsg?.type === 'image' || evolutionMsg?.message?.imageMessage?.url || evolutionMsg?.message?.imageMessage)
+
+    if (ctx.activeOrderId && isImage) {
+      let jid: string
+      let imgMsgId: string
+      if (metaMsg) {
+        // Meta Cloud: image.id is the media ID
+        imgMsgId = metaMsg.image?.id ?? metaMsg.id
+        jid = phone   // Meta sends phone directly
+      } else {
+        // Evolution: need remoteJid and message id
+        jid = evolutionMsg.key.remoteJid
+        imgMsgId = evolutionMsg.key.id
+      }
       if (!jid || !imgMsgId) return NextResponse.json({ ok: true })
 
       return handleMediaMessage({

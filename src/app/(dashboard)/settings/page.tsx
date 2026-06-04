@@ -3,15 +3,14 @@
 import { useAuthContext } from '@/lib/hooks/auth-context'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Store, Bell, Palette, Cpu, Save, Upload, X } from 'lucide-react'
+import { Store, Palette, Cpu, Save, Upload, X, CheckCircle2, AlertCircle, Smartphone, Link2Off, MessageSquare } from 'lucide-react'
 
 export default function SettingsPage() {
   const { authUser, currentStore, updateOrgName, updateCurrentStore } = useAuthContext()
   const [orgName, setOrgName] = useState('')
   const [storeName, setStoreName] = useState('')
   const [storeLogo, setStoreLogo] = useState<string | null>(null)
-  const [whatsappNumber, setWhatsappNumber] = useState('')
-  const [evolutionInstance, setEvolutionInstance] = useState('')
+  const [whatsappNumberDisplay, setWhatsappNumberDisplay] = useState('')
   const [aiProvider, setAiProvider] = useState('openai')
   const [aiApiKey, setAiApiKey] = useState('')
   const [aiModel, setAiModel] = useState('')
@@ -19,12 +18,22 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
 
+  // Meta Cloud API state
+  const [metaPhoneNumberId, setMetaPhoneNumberId] = useState('')
+  const [metaAccessToken, setMetaAccessToken] = useState('')
+  const [metaWabaId, setMetaWabaId] = useState('')
+  const [whatsappPhone, setWhatsappPhone] = useState('')
+  const [isConnected, setIsConnected] = useState(false)
+
   useEffect(() => {
     if (authUser?.organization?.name) setOrgName(authUser.organization.name)
     if (currentStore?.name) setStoreName(currentStore.name)
     if (currentStore?.logo_url) setStoreLogo(currentStore.logo_url)
-    if (currentStore?.whatsapp_number) setWhatsappNumber(currentStore.whatsapp_number)
-    if (currentStore?.evolution_instance) setEvolutionInstance(currentStore.evolution_instance)
+    if (currentStore?.whatsapp_number) { setWhatsappNumberDisplay(currentStore.whatsapp_number); setWhatsappPhone(currentStore.whatsapp_number) }
+    if (currentStore?.meta_phone_number_id) setMetaPhoneNumberId(currentStore.meta_phone_number_id)
+    if (currentStore?.meta_access_token) setMetaAccessToken(currentStore.meta_access_token)
+    if (currentStore?.meta_waba_id) setMetaWabaId(currentStore.meta_waba_id)
+    if (currentStore?.meta_access_token) setIsConnected(true)
     // Load AI config
     fetch('/api/settings/ai-config').then(r => r.json()).then(data => {
       if (data.provider) setAiProvider(data.provider)
@@ -49,7 +58,6 @@ export default function SettingsPage() {
       const { data: urlData } = sb.storage.from('store-logos').getPublicUrl(path)
       const logoUrl = urlData.publicUrl
       setStoreLogo(logoUrl)
-      // Save via API route (uses service_role — bypasses RLS)
       await fetch('/api/settings/store', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -62,19 +70,63 @@ export default function SettingsPage() {
     setUploadingLogo(false)
   }
 
+  async function handleMetaSave() {
+    try {
+      await fetch('/api/settings/store', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          metaPhoneNumberId: metaPhoneNumberId,
+          metaAccessToken: metaAccessToken,
+          metaWabaId: metaWabaId,
+          whatsappNumber: whatsappPhone || undefined,
+        }),
+      })
+      updateCurrentStore({
+        meta_phone_number_id: metaPhoneNumberId,
+        meta_access_token: metaAccessToken,
+        meta_waba_id: metaWabaId,
+        whatsapp_number: whatsappPhone || null,
+      } as any)
+      setWhatsappNumberDisplay(whatsappPhone)
+      setIsConnected(!!metaAccessToken && !!metaPhoneNumberId)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch {
+      // dev mode — Supabase not available
+    }
+  }
+
+  async function handleMetaDisconnect() {
+    try {
+      await fetch('/api/whatsapp/disconnect', { method: 'POST' })
+      setMetaPhoneNumberId('')
+      setMetaAccessToken('')
+      setMetaWabaId('')
+      setWhatsappPhone('')
+      setWhatsappNumberDisplay('')
+      setIsConnected(false)
+      updateCurrentStore({
+        meta_phone_number_id: null,
+        meta_access_token: null,
+        meta_waba_id: null,
+        whatsapp_number: null,
+      } as any)
+    } catch {
+      // ignore
+    }
+  }
+
   async function handleSave() {
     setSaving(true)
     setSaved(false)
     try {
-      // Save org/store via API (uses service_role — bypasses RLS)
       const res = await fetch('/api/settings/store', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orgName: orgName !== authUser?.organization?.name ? orgName : undefined,
           storeName: storeName !== currentStore?.name ? storeName : undefined,
-          whatsappNumber: whatsappNumber !== (currentStore?.whatsapp_number ?? '') ? whatsappNumber : undefined,
-          evolutionInstance: evolutionInstance !== (currentStore?.evolution_instance ?? '') ? evolutionInstance : undefined,
         }),
       })
       if (!res.ok) {
@@ -82,17 +134,13 @@ export default function SettingsPage() {
         console.error('[Settings] API error:', errData)
       }
 
-      // Update local state
       if (orgName !== authUser?.organization?.name) updateOrgName(orgName)
       if (currentStore) {
         const updates: Record<string, string | null> = {}
         if (storeName !== currentStore.name) updates.name = storeName
-        if (whatsappNumber !== (currentStore.whatsapp_number ?? '')) updates.whatsapp_number = whatsappNumber
-        if (evolutionInstance !== (currentStore.evolution_instance ?? '')) updates.evolution_instance = evolutionInstance
         if (Object.keys(updates).length > 0) updateCurrentStore(updates)
       }
 
-      // Save AI config — only if apiKey doesn't contain the masked placeholder
       const isApiKeyDirty = aiApiKey && !aiApiKey.includes('••••')
       if (isApiKeyDirty) {
         await fetch('/api/settings/ai-config', {
@@ -105,11 +153,8 @@ export default function SettingsPage() {
       // dev mode — Supabase not available
     }
 
-    // Persist to localStorage so dev mode survives refresh
     localStorage.setItem('ca-dev-org-name', orgName)
     localStorage.setItem('ca-dev-store-name', storeName)
-    localStorage.setItem('ca-dev-whatsapp', whatsappNumber)
-    if (evolutionInstance) localStorage.setItem('ca-dev-evolution-instance', evolutionInstance)
     if (storeLogo) localStorage.setItem('ca-dev-logo', storeLogo)
 
     setSaving(false)
@@ -154,7 +199,6 @@ export default function SettingsPage() {
           <h2 className="font-semibold text-sm">Mi Tienda</h2>
         </div>
 
-        {/* Logo upload */}
         <div>
           <label className="text-xs font-medium" style={{ color: 'var(--muted)' }}>Foto de perfil</label>
           <div className="mt-2 flex items-center gap-4">
@@ -210,28 +254,92 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* WhatsApp */}
+      {/* WhatsApp Cloud API */}
       <div className="card p-5 space-y-4">
         <div className="flex items-center gap-2">
-          <Bell size={16} style={{ color: 'var(--brand)' }} />
-          <h2 className="font-semibold text-sm">WhatsApp</h2>
+          <MessageSquare size={16} style={{ color: 'var(--brand)' }} />
+          <h2 className="font-semibold text-sm">WhatsApp Cloud API (Meta)</h2>
         </div>
+
+        <div className="flex items-center gap-2">
+          {isConnected ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-[var(--radius-full)] text-xs font-medium"
+              style={{ background: '#f0fdf4', color: '#065f46' }}>
+              <CheckCircle2 size={14} />
+              Conectado
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-[var(--radius-full)] text-xs font-medium"
+              style={{ background: '#fef2f2', color: '#991b1b' }}>
+              <AlertCircle size={14} />
+              No configurado
+            </div>
+          )}
+        </div>
+
+        {isConnected && whatsappNumberDisplay && (
+          <div className="flex items-center gap-2 text-sm">
+            <Smartphone size={16} style={{ color: 'var(--muted)' }} />
+            <span>{whatsappNumberDisplay}</span>
+          </div>
+        )}
+
         <div>
-          <label className="text-xs font-medium" style={{ color: 'var(--muted)' }}>Número de WhatsApp</label>
-          <input type="text" value={whatsappNumber} onChange={e => setWhatsappNumber(e.target.value)}
+          <label className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
+            Phone Number ID
+          </label>
+          <input type="text" value={metaPhoneNumberId} onChange={e => setMetaPhoneNumberId(e.target.value)}
+            placeholder="123456789012345"
+            className="w-full mt-1 px-3 py-2 rounded-[var(--radius-md)] border text-sm bg-transparent outline-none"
+            style={{ borderColor: 'var(--border)', color: 'var(--foreground)' }}
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
+            Access Token
+          </label>
+          <input type="password" value={metaAccessToken} onChange={e => setMetaAccessToken(e.target.value)}
+            placeholder="EAA..."
+            className="w-full mt-1 px-3 py-2 rounded-[var(--radius-md)] border text-sm bg-transparent outline-none font-mono"
+            style={{ borderColor: 'var(--border)', color: 'var(--foreground)' }}
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
+            Número de teléfono <span className="text-[var(--subtle)]">(opcional)</span>
+          </label>
+          <input type="text" value={whatsappPhone} onChange={e => setWhatsappPhone(e.target.value)}
             placeholder="+5491123456789"
             className="w-full mt-1 px-3 py-2 rounded-[var(--radius-md)] border text-sm bg-transparent outline-none"
             style={{ borderColor: 'var(--border)', color: 'var(--foreground)' }}
           />
         </div>
-        <div>
-          <label className="text-xs font-medium" style={{ color: 'var(--muted)' }}>Instancia de Evolution API</label>
-          <input type="text" value={evolutionInstance} onChange={e => setEvolutionInstance(e.target.value)}
-            placeholder="mi-instancia"
-            className="w-full mt-1 px-3 py-2 rounded-[var(--radius-md)] border text-sm bg-transparent outline-none"
-            style={{ borderColor: 'var(--border)', color: 'var(--foreground)' }}
-          />
+
+        <div className="flex items-center gap-3">
+          <button onClick={handleMetaSave} disabled={!metaPhoneNumberId || !metaAccessToken}
+            className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-md)] text-white text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{ background: 'var(--brand)' }}>
+            <Save size={16} />
+            {saved ? 'Configuración guardada' : 'Guardar configuración'}
+          </button>
+
+          {isConnected && (
+            <button onClick={handleMetaDisconnect}
+              className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-md)] text-sm font-medium transition-colors"
+              style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+              <Link2Off size={16} />
+              Desconectar
+            </button>
+          )}
         </div>
+
+        <p className="text-xs" style={{ color: 'var(--subtle)' }}>
+          No se verifica contra Meta al guardar. La conexión se valida al recibir el primer mensaje.
+          También podés configurarlo desde la página{' '}
+          <a href="/whatsapp" className="underline">WhatsApp</a>.
+        </p>
       </div>
 
       {/* AI Agent */}

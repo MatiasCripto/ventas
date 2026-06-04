@@ -35,13 +35,23 @@ function getDevOrg(): Organization {
 }
 
 function getDevStore(): Store {
-  if (typeof window === 'undefined') return { id: 'dev-store', organization_id: 'dev-org', name: 'Tienda Dev', logo_url: null, address: null, phone: '+5491123456789', whatsapp_number: '+5491123456789', timezone: 'America/Argentina/Buenos_Aires', settings: {}, is_active: true, evolution_instance: null, created_at: new Date().toISOString() }
+  if (typeof window === 'undefined') return { id: 'dev-store', organization_id: 'dev-org', name: 'Tienda Dev', logo_url: null, address: null, phone: '+5491123456789', whatsapp_number: null, timezone: 'America/Argentina/Buenos_Aires', settings: {}, is_active: true, evolution_instance: null, whatsapp_token: null, whatsapp_phone: null, whatsapp_phone_number_id: null, whatsapp_waba_id: null, whatsapp_active: null, meta_phone_number_id: null, meta_access_token: null, meta_waba_id: null, whatsapp_provider: 'meta', created_at: new Date().toISOString() }
   return {
     id: 'dev-store', organization_id: 'dev-org', name: localStorage.getItem('ca-dev-store-name') || 'Tienda Dev',
     logo_url: localStorage.getItem('ca-dev-logo'), address: null, phone: '+5491123456789',
-    whatsapp_number: localStorage.getItem('ca-dev-whatsapp') || '+5491123456789',
+    whatsapp_number: localStorage.getItem('ca-dev-whatsapp') || null,
     timezone: 'America/Argentina/Buenos_Aires', settings: {}, is_active: true,
-    evolution_instance: localStorage.getItem('ca-dev-evolution-instance') || null, created_at: new Date().toISOString(),
+    evolution_instance: localStorage.getItem('ca-dev-evolution-instance') || null,
+    whatsapp_token: localStorage.getItem('ca-dev-whatsapp-token') || null,
+    whatsapp_phone: localStorage.getItem('ca-dev-whatsapp-phone') || null,
+    whatsapp_phone_number_id: localStorage.getItem('ca-dev-meta-phone-number-id') || null,
+    whatsapp_waba_id: null,
+    whatsapp_active: localStorage.getItem('ca-dev-whatsapp-active') === 'true' || null,
+    meta_phone_number_id: localStorage.getItem('ca-dev-meta-phone-number-id') || null,
+    meta_access_token: localStorage.getItem('ca-dev-meta-access-token') || null,
+    meta_waba_id: localStorage.getItem('ca-dev-meta-waba-id') || null,
+    whatsapp_provider: 'meta',
+    created_at: new Date().toISOString(),
   }
 }
 
