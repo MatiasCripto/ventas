@@ -51,6 +51,10 @@ export default function WhatsAppPage() {
         whatsapp_number: phoneNumber || null,
       } as any)
       setPhoneDisplay(phoneNumber)
+      localStorage.setItem('ca-dev-meta-phone-number-id', phoneNumberId)
+      localStorage.setItem('ca-dev-meta-access-token', accessToken)
+      localStorage.setItem('ca-dev-meta-waba-id', wabaId)
+      if (phoneNumber) localStorage.setItem('ca-dev-whatsapp', phoneNumber)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (err: any) {

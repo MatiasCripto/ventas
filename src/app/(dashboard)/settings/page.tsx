@@ -90,6 +90,10 @@ export default function SettingsPage() {
       } as any)
       setWhatsappNumberDisplay(whatsappPhone)
       setIsConnected(!!metaAccessToken && !!metaPhoneNumberId)
+      localStorage.setItem('ca-dev-meta-phone-number-id', metaPhoneNumberId)
+      localStorage.setItem('ca-dev-meta-access-token', metaAccessToken)
+      localStorage.setItem('ca-dev-meta-waba-id', metaWabaId)
+      if (whatsappPhone) localStorage.setItem('ca-dev-whatsapp', whatsappPhone)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch {
