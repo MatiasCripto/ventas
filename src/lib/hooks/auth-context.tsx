@@ -108,6 +108,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') {
       const lsOrgName = localStorage.getItem('ca-dev-org-name')
       if (lsOrgName && org) finalOrg = { ...org, name: lsOrgName }
+      // Apply AI config overrides from localStorage (survives API save failures)
+      const lsAiProvider = localStorage.getItem('ca-dev-ai-provider')
+      const lsAiKey = localStorage.getItem('ca-dev-ai-key')
+      const lsAiModel = localStorage.getItem('ca-dev-ai-model')
+      if ((lsAiProvider || lsAiKey || lsAiModel) && finalOrg) {
+        finalOrg = {
+          ...finalOrg,
+          settings: {
+            ...(finalOrg.settings ?? {}),
+            ...(lsAiProvider ? { ai_provider: lsAiProvider } : {}),
+            ...(lsAiKey ? { ai_api_key: lsAiKey } : {}),
+            ...(lsAiModel ? { ai_model: lsAiModel } : {}),
+          },
+        }
+      }
       const lsStoreName = localStorage.getItem('ca-dev-store-name')
       if (lsStoreName) finalStores = stores.map(s => ({ ...s, name: lsStoreName }))
       // Apply Meta Cloud API overrides from localStorage (survives API save failures)
